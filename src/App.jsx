@@ -948,11 +948,11 @@ const LoginPanel = ({ onLogin, onRegister }) => {
         </button>
         {role === "student" && (
           <button style={styles.linkBtn} onClick={onRegister}>
-            没有账号？注册学员
+            没有账号？提交申请
           </button>
         )}
         <div style={styles.loginHint}>
-          老师账号由管理员创建，学员可自行注册或由老师开卡创建。
+          老师账号由管理员创建，学员注册仅做申请，需老师开卡通过。
         </div>
       </div>
     </div>
@@ -1599,7 +1599,7 @@ const StudentRegisterModal = ({ onClose, onSubmit }) => {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   return (
-    <Modal title="学员注册" onClose={onClose}>
+    <Modal title="学员申请" onClose={onClose}>
       <Field label="姓名">
         <input
           style={styles.input}
@@ -1632,7 +1632,7 @@ const StudentRegisterModal = ({ onClose, onSubmit }) => {
           onSubmit({ name, phone, password });
         }}
       >
-        注册
+        提交申请
       </button>
     </Modal>
   );
