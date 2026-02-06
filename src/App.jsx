@@ -1298,10 +1298,20 @@ const App = () => {
           students={students}
           onClose={() => setShowCardModal(false)}
           onSubmit={handleCreateCard}
-          onCreateStudent={(form) => {
-            const id = buildId("s");
-            setStudents((prev) => [...prev, { ...form, id }]);
-            return id;
+          onCreateStudent={async (form) => {
+            const { data, error } = await supabase.functions.invoke("create-student", {
+              body: { name: form.name, phone: form.phone, password: form.password },
+            });
+            if (error || data?.error) {
+              handleDbError(error || data?.error, "创建学员失败");
+              return "";
+            }
+            if (data?.student) {
+              setStudents((prev) => [...prev, mapStudentFromDb(data.student)]);
+              return data.student.id;
+            }
+            showAlert("创建学员失败");
+            return "";
           }}
         />
       )}
@@ -2407,10 +2417,11 @@ const CardModal = ({ students, onClose, onSubmit, onCreateStudent }) => {
       )}
       <button
         style={styles.primaryBtn}
-        onClick={() => {
+        onClick={async () => {
           if (createNew) {
-            if (!newStudent.name || !newStudent.phone) return;
-            const newId = onCreateStudent ? onCreateStudent({ ...newStudent }) : "";
+            if (!newStudent.name || !newStudent.phone || !newStudent.password) return;
+            const newId = onCreateStudent ? await onCreateStudent({ ...newStudent }) : "";
+            if (!newId) return;
             onSubmit({ ...form, studentId: newId });
             return;
           }
