@@ -502,7 +502,8 @@ const App = () => {
   const handleDbError = (error, msg) => {
     if (error) {
       console.error(error);
-      showAlert(msg);
+      const detail = error?.message ? `：${error.message}` : "";
+      showAlert(`${msg}${detail}`);
     }
   };
   useEffect(() => {
@@ -1303,7 +1304,8 @@ const App = () => {
               body: { name: form.name, phone: form.phone, password: form.password },
             });
             if (error || data?.error) {
-              handleDbError(error || data?.error, "创建学员失败");
+              const detail = data?.error || error?.message || "";
+              showAlert(detail ? `创建学员失败：${detail}` : "创建学员失败");
               return "";
             }
             if (data?.student) {
