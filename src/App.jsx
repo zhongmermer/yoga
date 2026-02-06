@@ -5,6 +5,30 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://xmthimontmtcradzcyhf.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_DkLIsNxaJf7ac-R-lYlB9g_swwr69MW";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const invokeEdge = async (name, payload) => {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token || "";
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: token ? `Bearer ${token}` : "",
+      apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  const text = await resp.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  if (!resp.ok) {
+    return { error: json?.error || text || `HTTP ${resp.status}` };
+  }
+  return { data: json };
+};
 const LEVELS = ["基础", "中级", "进阶"];
 const LEVEL_COLORS = {
   基础: "linear-gradient(135deg, #8fbfb5, #7fb3a8)",
@@ -1202,14 +1226,14 @@ const App = () => {
                   onResetPassword={handleResetStudentPassword}
                   pendingRegistrations={pendingRegistrations}
                   onApproveRegistration={async (reg) => {
-                    const { data, error } = await supabase.functions.invoke(
-                      "create-student",
-                      {
-                        body: { name: reg.name, phone: reg.phone, password: reg.password, requestId: reg.id },
-                      }
-                    );
+                    const { data, error } = await invokeEdge("create-student", {
+                      name: reg.name,
+                      phone: reg.phone,
+                      password: reg.password,
+                      requestId: reg.id,
+                    });
                     if (error || data?.error) {
-                      handleDbError(error || data?.error, "开通学员失败");
+                      showAlert(error || data?.error || "开通学员失败");
                       return;
                     }
                     if (data?.student) {
@@ -1300,11 +1324,13 @@ const App = () => {
           onClose={() => setShowCardModal(false)}
           onSubmit={handleCreateCard}
           onCreateStudent={async (form) => {
-            const { data, error } = await supabase.functions.invoke("create-student", {
-              body: { name: form.name, phone: form.phone, password: form.password },
+            const { data, error } = await invokeEdge("create-student", {
+              name: form.name,
+              phone: form.phone,
+              password: form.password,
             });
             if (error || data?.error) {
-              const detail = data?.error || error?.message || "";
+              const detail = data?.error || error || "";
               showAlert(detail ? `创建学员失败：${detail}` : "创建学员失败");
               return "";
             }
