@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 // Yoga Booking System - Single File React Component (JSX)
 // No external dependencies, all inline styles
+const SUPABASE_URL = "https://xmthimontmtcradzcyhf.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_DkLIsNxaJf7ac-R-lYlB9g_swwr69MW";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const LEVELS = ["基础", "中级", "进阶"];
 const LEVEL_COLORS = {
   基础: "linear-gradient(135deg, #8fbfb5, #7fb3a8)",
@@ -95,6 +99,123 @@ const DEFAULT_BOOKINGS = [
     createdAt: Date.now() - 1000 * 60 * 60 * 24,
   },
 ];
+const mapTeacherFromDb = (t) => ({
+  id: t.id,
+  name: t.name,
+  password: t.password,
+  isAdmin: t.is_admin,
+});
+const mapTeacherToDb = (t) => ({
+  id: t.id,
+  name: t.name,
+  password: t.password,
+  is_admin: t.isAdmin,
+});
+const mapStudentFromDb = (s) => ({
+  id: s.id,
+  name: s.name,
+  phone: s.phone,
+  password: s.password,
+});
+const mapStudentToDb = (s) => ({
+  id: s.id,
+  name: s.name,
+  phone: s.phone,
+  password: s.password,
+});
+const mapCardFromDb = (c) => ({
+  id: c.id,
+  studentId: c.student_id,
+  type: c.type,
+  name: c.name,
+  startDate: c.start_date || "",
+  endDate: c.end_date || "",
+  pausedAt: c.paused_at || "",
+  pausedDays: c.paused_days || 0,
+  allowedLevels: c.allowed_levels || [],
+  totalCount: c.total_count || 0,
+  usedCount: c.used_count || 0,
+});
+const mapCardToDb = (c) => ({
+  id: c.id,
+  student_id: c.studentId,
+  type: c.type,
+  name: c.name,
+  start_date: c.startDate || null,
+  end_date: c.endDate || null,
+  paused_at: c.pausedAt || null,
+  paused_days: c.pausedDays || 0,
+  allowed_levels: c.allowedLevels || [],
+  total_count: c.totalCount || null,
+  used_count: c.usedCount || 0,
+});
+const mapCourseFromDb = (c) => ({
+  id: c.id,
+  title: c.title,
+  date: c.date,
+  time: c.time,
+  duration: c.duration,
+  teacherId: c.teacher_id,
+  maxStudents: c.max_students,
+  minStudents: c.min_students,
+  level: c.level,
+  description: c.description,
+  isPrivate: c.is_private,
+  privateStudentId: c.private_student_id || "",
+});
+const mapCourseToDb = (c) => ({
+  id: c.id,
+  title: c.title,
+  date: c.date,
+  time: c.time,
+  duration: c.duration,
+  teacher_id: c.teacherId || null,
+  max_students: c.maxStudents || null,
+  min_students: c.minStudents || null,
+  level: c.level,
+  description: c.description,
+  is_private: c.isPrivate,
+  private_student_id: c.privateStudentId || null,
+});
+const mapBookingFromDb = (b) => ({
+  id: b.id,
+  courseId: b.course_id,
+  studentId: b.student_id,
+  status: b.status,
+  createdAt: b.created_at ? new Date(b.created_at).getTime() : Date.now(),
+  isPrivate: b.is_private || false,
+});
+const mapBookingToDb = (b) => ({
+  id: b.id,
+  course_id: b.courseId,
+  student_id: b.studentId,
+  status: b.status,
+  created_at: new Date(b.createdAt || Date.now()).toISOString(),
+  is_private: b.isPrivate || false,
+});
+const mapHolidayFromDb = (h) => ({
+  id: h.id,
+  startDate: h.start_date,
+  endDate: h.end_date,
+});
+const mapHolidayToDb = (h) => ({
+  id: h.id,
+  start_date: h.startDate,
+  end_date: h.endDate,
+});
+const mapRegistrationFromDb = (r) => ({
+  id: r.id,
+  name: r.name,
+  phone: r.phone,
+  password: r.password,
+});
+const mapRegistrationToDb = (r) => ({
+  id: r.id,
+  name: r.name,
+  phone: r.phone,
+  password: r.password,
+  status: r.status || "pending",
+});
 const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
 const formatDate = (d) => {
   const year = d.getFullYear();
@@ -313,12 +434,14 @@ const Tag = ({ text, color }) => (
 );
 const Empty = ({ text }) => <div style={styles.empty}>{text}</div>;
 const App = () => {
-  const [teachers, setTeachers] = useState(DEFAULT_TEACHERS);
-  const [students, setStudents] = useState(DEFAULT_STUDENTS);
-  const [courses, setCourses] = useState(DEFAULT_COURSES);
-  const [cards, setCards] = useState(DEFAULT_CARDS);
-  const [holidays, setHolidays] = useState(DEFAULT_HOLIDAYS);
-  const [bookings, setBookings] = useState(DEFAULT_BOOKINGS);
+  const [teachers, setTeachers] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [cards, setCards] = useState([]);
+  const [holidays, setHolidays] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [studioName, setStudioName] = useState("小主瑜伽");
+  const [loading, setLoading] = useState(true);
   const [auth, setAuth] = useState(null);
   const [activeTab, setActiveTab] = useState("schedule");
   const [isMobile, setIsMobile] = useState(false);
@@ -372,6 +495,75 @@ const App = () => {
     setAlert(msg);
     setTimeout(() => setAlert(""), 2400);
   };
+  const handleDbError = (error, msg) => {
+    if (error) {
+      console.error(error);
+      showAlert(msg);
+    }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    const loadAll = async () => {
+      setLoading(true);
+      const [
+        teacherRes,
+        studentRes,
+        courseRes,
+        cardRes,
+        holidayRes,
+        bookingRes,
+        regRes,
+        settingsRes,
+      ] = await Promise.all([
+        supabase.from("teachers").select("*"),
+        supabase.from("students").select("*"),
+        supabase.from("courses").select("*"),
+        supabase.from("cards").select("*"),
+        supabase.from("holidays").select("*"),
+        supabase.from("bookings").select("*"),
+        supabase.from("registration_requests").select("*").eq("status", "pending"),
+        supabase.from("settings").select("*").limit(1),
+      ]);
+      if (cancelled) return;
+      handleDbError(teacherRes.error, "加载老师失败");
+      handleDbError(studentRes.error, "加载学员失败");
+      handleDbError(courseRes.error, "加载课程失败");
+      handleDbError(cardRes.error, "加载会员卡失败");
+      handleDbError(holidayRes.error, "加载放假设置失败");
+      handleDbError(bookingRes.error, "加载预约失败");
+      handleDbError(regRes.error, "加载注册申请失败");
+      handleDbError(settingsRes.error, "加载馆名失败");
+
+      let teacherData = (teacherRes.data || []).map(mapTeacherFromDb);
+      if (teacherData.length === 0) {
+        const seedTeacher = { name: "小主", password: "yoga123", isAdmin: true };
+        const insertRes = await supabase
+          .from("teachers")
+          .insert(mapTeacherToDb(seedTeacher))
+          .select("*")
+          .single();
+        if (insertRes.error) {
+          handleDbError(insertRes.error, "初始化管理员失败");
+        } else {
+          teacherData = [mapTeacherFromDb(insertRes.data)];
+        }
+      }
+      setTeachers(teacherData);
+      setStudents((studentRes.data || []).map(mapStudentFromDb));
+      setCourses((courseRes.data || []).map(mapCourseFromDb));
+      setCards((cardRes.data || []).map(mapCardFromDb));
+      setHolidays((holidayRes.data || []).map(mapHolidayFromDb));
+      setBookings((bookingRes.data || []).map(mapBookingFromDb));
+      setPendingRegistrations((regRes.data || []).map(mapRegistrationFromDb));
+      const settingsRow = settingsRes.data?.[0];
+      if (settingsRow?.studio_name) setStudioName(settingsRow.studio_name);
+      setLoading(false);
+    };
+    loadAll();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleResize = () => {
@@ -402,19 +594,30 @@ const App = () => {
   const handleLogout = () => {
     setAuth(null);
   };
-  const handleChangePassword = ({ oldPassword, newPassword }) => {
+  const handleChangePassword = async ({ oldPassword, newPassword }) => {
     if (auth?.type !== "student") return;
+    const target = students.find((s) => s.id === auth.id);
+    if (!target || target.password !== oldPassword) {
+      showAlert("原密码不正确");
+      return;
+    }
+    const { data, error } = await supabase
+      .from("students")
+      .update({ password: newPassword })
+      .eq("id", auth.id)
+      .select("*")
+      .single();
+    if (error) {
+      handleDbError(error, "密码更新失败");
+      return;
+    }
     setStudents((prev) =>
-      prev.map((s) =>
-        s.id === auth.id && s.password === oldPassword
-          ? { ...s, password: newPassword }
-          : s
-      )
+      prev.map((s) => (s.id === auth.id ? mapStudentFromDb(data) : s))
     );
     setShowPasswordModal(false);
     showAlert("密码已更新");
   };
-  const handleCreateCourse = (form) => {
+  const handleCreateCourse = async (form) => {
     const start = parseDateTime(form.date, form.time);
     if (start.getTime() < Date.now()) {
       showAlert("不能创建已过去的课程时间");
@@ -425,9 +628,19 @@ const App = () => {
       showAlert("时间冲突，无法创建课程");
       return;
     }
-    const newCourse = { ...form, id: buildId("co") };
-    setCourses((prev) => [...prev, newCourse]);
-    if (newCourse.isPrivate) {
+    const newCourse = { ...form };
+    const insertRes = await supabase
+      .from("courses")
+      .insert(mapCourseToDb(newCourse))
+      .select("*")
+      .single();
+    if (insertRes.error) {
+      handleDbError(insertRes.error, "课程创建失败");
+      return;
+    }
+    const createdCourse = mapCourseFromDb(insertRes.data);
+    setCourses((prev) => [...prev, createdCourse]);
+    if (createdCourse.isPrivate) {
       const selectedStudent = form.privateStudentId;
       if (selectedStudent) {
         const privateCard = cards.find(
@@ -438,28 +651,40 @@ const App = () => {
         );
         if (privateCard) {
           const booking = {
-            id: buildId("b"),
-            courseId: newCourse.id,
+            courseId: createdCourse.id,
             studentId: selectedStudent,
             status: "confirmed",
             createdAt: Date.now(),
             isPrivate: true,
           };
-          setBookings((prev) => [...prev, booking]);
-          setCards((prev) =>
-            prev.map((c) =>
-              c.id === privateCard.id
-                ? { ...c, usedCount: (c.usedCount || 0) + 1 }
-                : c
-            )
-          );
+          const bookingRes = await supabase
+            .from("bookings")
+            .insert(mapBookingToDb(booking))
+            .select("*")
+            .single();
+          if (!bookingRes.error) {
+            setBookings((prev) => [...prev, mapBookingFromDb(bookingRes.data)]);
+          }
+          const cardRes = await supabase
+            .from("cards")
+            .update({ used_count: (privateCard.usedCount || 0) + 1 })
+            .eq("id", privateCard.id)
+            .select("*")
+            .single();
+          if (!cardRes.error) {
+            setCards((prev) =>
+              prev.map((c) =>
+                c.id === privateCard.id ? mapCardFromDb(cardRes.data) : c
+              )
+            );
+          }
         }
       }
     }
     setShowCourseModal(false);
     showAlert("课程已创建");
   };
-  const handleUpdateCourse = (form) => {
+  const handleUpdateCourse = async (form) => {
     const start = parseDateTime(form.date, form.time);
     if (start.getTime() < Date.now()) {
       showAlert("不能设置为已过去的课程时间");
@@ -470,17 +695,34 @@ const App = () => {
       showAlert("时间冲突，无法更新课程");
       return;
     }
-    setCourses((prev) => prev.map((c) => (c.id === form.id ? form : c)));
+    const updateRes = await supabase
+      .from("courses")
+      .update(mapCourseToDb(form))
+      .eq("id", form.id)
+      .select("*")
+      .single();
+    if (updateRes.error) {
+      handleDbError(updateRes.error, "课程更新失败");
+      return;
+    }
+    setCourses((prev) =>
+      prev.map((c) => (c.id === form.id ? mapCourseFromDb(updateRes.data) : c))
+    );
     setShowCourseModal(false);
     setEditingCourse(null);
     showAlert("课程已更新");
   };
-  const handleDeleteCourse = (courseId) => {
+  const handleDeleteCourse = async (courseId) => {
+    const { error } = await supabase.from("courses").delete().eq("id", courseId);
+    if (error) {
+      handleDbError(error, "课程删除失败");
+      return;
+    }
     setCourses((prev) => prev.filter((c) => c.id !== courseId));
     setBookings((prev) => prev.filter((b) => b.courseId !== courseId));
     showAlert("课程已删除");
   };
-  const handleCreateBooking = (course) => {
+  const handleCreateBooking = async (course) => {
     if (!currentStudent) return;
     const check = checkCard({ course, studentId: currentStudent.id, cards, holidays });
     if (!check.ok) {
@@ -500,36 +742,62 @@ const App = () => {
       }
     }
     const booking = {
-      id: buildId("b"),
       courseId: course.id,
       studentId: currentStudent.id,
       status: "confirmed",
       createdAt: Date.now(),
       isPrivate: course.isPrivate,
     };
-    setBookings((prev) => [...prev, booking]);
+    const bookingRes = await supabase
+      .from("bookings")
+      .insert(mapBookingToDb(booking))
+      .select("*")
+      .single();
+    if (bookingRes.error) {
+      handleDbError(bookingRes.error, "预约失败");
+      return;
+    }
+    setBookings((prev) => [...prev, mapBookingFromDb(bookingRes.data)]);
     if (check.card) {
       if (check.card.type === "count" || check.card.type === "private") {
-        setCards((prev) =>
-          prev.map((c) =>
-            c.id === check.card.id
-              ? { ...c, usedCount: (c.usedCount || 0) + 1 }
-              : c
-          )
-        );
+        const cardRes = await supabase
+          .from("cards")
+          .update({ used_count: (check.card.usedCount || 0) + 1 })
+          .eq("id", check.card.id)
+          .select("*")
+          .single();
+        if (!cardRes.error) {
+          setCards((prev) =>
+            prev.map((c) =>
+              c.id === check.card.id ? mapCardFromDb(cardRes.data) : c
+            )
+          );
+        }
       }
     }
     showAlert("预约成功");
   };
-  const handleCancelBooking = (booking) => {
+  const handleCancelBooking = async (booking) => {
     const course = courses.find((c) => c.id === booking.courseId);
     if (!course) return;
     if (!canCancelBooking(course)) {
       showAlert("距开课不足2小时，无法取消");
       return;
     }
+    const bookingRes = await supabase
+      .from("bookings")
+      .update({ status: "cancelled" })
+      .eq("id", booking.id)
+      .select("*")
+      .single();
+    if (bookingRes.error) {
+      handleDbError(bookingRes.error, "取消失败");
+      return;
+    }
     setBookings((prev) =>
-      prev.map((b) => (b.id === booking.id ? { ...b, status: "cancelled" } : b))
+      prev.map((b) =>
+        b.id === booking.id ? mapBookingFromDb(bookingRes.data) : b
+      )
     );
     if (booking.isPrivate) {
       const privateCard = cards.find(
@@ -539,13 +807,19 @@ const App = () => {
           (c.usedCount || 0) > 0
       );
       if (privateCard) {
-        setCards((prev) =>
-          prev.map((c) =>
-            c.id === privateCard.id
-              ? { ...c, usedCount: Math.max(0, (c.usedCount || 0) - 1) }
-              : c
-          )
-        );
+        const cardRes = await supabase
+          .from("cards")
+          .update({ used_count: Math.max(0, (privateCard.usedCount || 0) - 1) })
+          .eq("id", privateCard.id)
+          .select("*")
+          .single();
+        if (!cardRes.error) {
+          setCards((prev) =>
+            prev.map((c) =>
+              c.id === privateCard.id ? mapCardFromDb(cardRes.data) : c
+            )
+          );
+        }
       }
     }
     if (!booking.isPrivate) {
@@ -553,78 +827,162 @@ const App = () => {
         (c) => c.studentId === booking.studentId && c.type === "count"
       );
       if (countCard) {
-        setCards((prev) =>
-          prev.map((c) =>
-            c.id === countCard.id
-              ? { ...c, usedCount: Math.max(0, (c.usedCount || 0) - 1) }
-              : c
-          )
-        );
+        const cardRes = await supabase
+          .from("cards")
+          .update({ used_count: Math.max(0, (countCard.usedCount || 0) - 1) })
+          .eq("id", countCard.id)
+          .select("*")
+          .single();
+        if (!cardRes.error) {
+          setCards((prev) =>
+            prev.map((c) =>
+              c.id === countCard.id ? mapCardFromDb(cardRes.data) : c
+            )
+          );
+        }
       }
     }
     showAlert("预约已取消");
   };
-  const handleCreateCard = (form) => {
-    setCards((prev) => [...prev, { ...form, id: buildId("c") }]);
+  const handleCreateCard = async (form) => {
+    const insertRes = await supabase
+      .from("cards")
+      .insert(mapCardToDb(form))
+      .select("*")
+      .single();
+    if (insertRes.error) {
+      handleDbError(insertRes.error, "会员卡创建失败");
+      return;
+    }
+    setCards((prev) => [...prev, mapCardFromDb(insertRes.data)]);
     setShowCardModal(false);
     showAlert("会员卡已创建");
   };
-  const handleDeleteCard = (cardId) => {
+  const handleDeleteCard = async (cardId) => {
+    const { error } = await supabase.from("cards").delete().eq("id", cardId);
+    if (error) {
+      handleDbError(error, "会员卡删除失败");
+      return;
+    }
     setCards((prev) => prev.filter((c) => c.id !== cardId));
     showAlert("会员卡已删除");
   };
-  const handleTogglePause = (card) => {
+  const handleTogglePause = async (card) => {
     if (card.type !== "period") return;
     if (!card.pausedAt) {
       const today = getNowDateStr();
+      const { data, error } = await supabase
+        .from("cards")
+        .update({ paused_at: today })
+        .eq("id", card.id)
+        .select("*")
+        .single();
+      if (error) {
+        handleDbError(error, "暂停失败");
+        return;
+      }
       setCards((prev) =>
-        prev.map((c) => (c.id === card.id ? { ...c, pausedAt: today } : c))
+        prev.map((c) => (c.id === card.id ? mapCardFromDb(data) : c))
       );
       showAlert("已暂停");
     } else {
       const today = getNowDateStr();
       const days = diffDays(card.pausedAt, today);
+      const { data, error } = await supabase
+        .from("cards")
+        .update({
+          paused_at: null,
+          paused_days: (card.pausedDays || 0) + days,
+        })
+        .eq("id", card.id)
+        .select("*")
+        .single();
+      if (error) {
+        handleDbError(error, "恢复失败");
+        return;
+      }
       setCards((prev) =>
-        prev.map((c) =>
-          c.id === card.id
-            ? {
-                ...c,
-                pausedAt: "",
-                pausedDays: (c.pausedDays || 0) + days,
-              }
-            : c
-        )
+        prev.map((c) => (c.id === card.id ? mapCardFromDb(data) : c))
       );
       showAlert("已恢复");
     }
   };
-  const handleCreateHoliday = (form) => {
-    setHolidays((prev) => [...prev, { ...form, id: buildId("h") }]);
+  const handleCreateHoliday = async (form) => {
+    const insertRes = await supabase
+      .from("holidays")
+      .insert(mapHolidayToDb(form))
+      .select("*")
+      .single();
+    if (insertRes.error) {
+      handleDbError(insertRes.error, "放假设置创建失败");
+      return;
+    }
+    setHolidays((prev) => [...prev, mapHolidayFromDb(insertRes.data)]);
     setShowHolidayModal(false);
     showAlert("放假设置已添加");
   };
-  const handleDeleteHoliday = (holidayId) => {
+  const handleDeleteHoliday = async (holidayId) => {
+    const { error } = await supabase.from("holidays").delete().eq("id", holidayId);
+    if (error) {
+      handleDbError(error, "放假设置删除失败");
+      return;
+    }
     setHolidays((prev) => prev.filter((h) => h.id !== holidayId));
     showAlert("放假设置已删除");
   };
-  const handleCreateTeacher = (form) => {
-    setTeachers((prev) => [...prev, { ...form, id: buildId("t") }]);
+  const handleCreateTeacher = async (form) => {
+    const insertRes = await supabase
+      .from("teachers")
+      .insert(mapTeacherToDb(form))
+      .select("*")
+      .single();
+    if (insertRes.error) {
+      handleDbError(insertRes.error, "老师添加失败");
+      return;
+    }
+    setTeachers((prev) => [...prev, mapTeacherFromDb(insertRes.data)]);
     setShowTeacherModal(false);
     showAlert("老师已添加");
   };
-  const handleDeleteTeacher = (teacherId) => {
+  const handleDeleteTeacher = async (teacherId) => {
+    await supabase.from("courses").delete().eq("teacher_id", teacherId);
+    const { error } = await supabase.from("teachers").delete().eq("id", teacherId);
+    if (error) {
+      handleDbError(error, "老师删除失败");
+      return;
+    }
     setTeachers((prev) => prev.filter((t) => t.id !== teacherId));
     setCourses((prev) => prev.filter((c) => c.teacherId !== teacherId));
     showAlert("老师已删除");
   };
-  const handleToggleAdmin = (teacher) => {
+  const handleToggleAdmin = async (teacher) => {
+    const { data, error } = await supabase
+      .from("teachers")
+      .update({ is_admin: !teacher.isAdmin })
+      .eq("id", teacher.id)
+      .select("*")
+      .single();
+    if (error) {
+      handleDbError(error, "更新失败");
+      return;
+    }
     setTeachers((prev) =>
-      prev.map((t) => (t.id === teacher.id ? { ...t, isAdmin: !t.isAdmin } : t))
+      prev.map((t) => (t.id === teacher.id ? mapTeacherFromDb(data) : t))
     );
   };
-  const handleResetStudentPassword = (studentId) => {
+  const handleResetStudentPassword = async (studentId) => {
+    const { data, error } = await supabase
+      .from("students")
+      .update({ password: "123456" })
+      .eq("id", studentId)
+      .select("*")
+      .single();
+    if (error) {
+      handleDbError(error, "重置失败");
+      return;
+    }
     setStudents((prev) =>
-      prev.map((s) => (s.id === studentId ? { ...s, password: "123456" } : s))
+      prev.map((s) => (s.id === studentId ? mapStudentFromDb(data) : s))
     );
     showAlert("学员密码已重置为123456");
   };
@@ -646,7 +1004,7 @@ const App = () => {
     <div style={styles.page}>
       <div style={styles.appShell}>
         <div style={styles.topBar}>
-          <div style={styles.brand}>小主瑜伽</div>
+          <div style={styles.brand}>{studioName}</div>
           <div style={styles.topBarRight}>
             {auth ? (
               <>
@@ -672,8 +1030,13 @@ const App = () => {
           </div>
         </div>
         {alert && <div style={styles.toast}>{alert}</div>}
+        {loading && <div style={styles.loading}>数据加载中...</div>}
         {!auth && (
-          <LoginPanel onLogin={handleLogin} onRegister={() => setShowRegisterModal(true)} />
+          <LoginPanel
+            studioName={studioName}
+            onLogin={handleLogin}
+            onRegister={() => setShowRegisterModal(true)}
+          />
         )}
         {auth && (
           <div style={{ ...styles.body, ...(isMobile ? styles.bodyMobile : null) }}>
@@ -772,12 +1135,29 @@ const App = () => {
                   onTogglePause={handleTogglePause}
                   onResetPassword={handleResetStudentPassword}
                   pendingRegistrations={pendingRegistrations}
-                  onApproveRegistration={(reg) => {
-                    setStudents((prev) => [...prev, { id: buildId("s"), ...reg }]);
+                  onApproveRegistration={async (reg) => {
+                    const { data: studentData, error: studentErr } = await supabase
+                      .from("students")
+                      .insert(mapStudentToDb(reg))
+                      .select("*")
+                      .single();
+                    if (studentErr) {
+                      handleDbError(studentErr, "开通学员失败");
+                      return;
+                    }
+                    await supabase
+                      .from("registration_requests")
+                      .update({ status: "approved" })
+                      .eq("id", reg.id);
+                    setStudents((prev) => [...prev, mapStudentFromDb(studentData)]);
                     setPendingRegistrations((prev) => prev.filter((p) => p.id !== reg.id));
                     showAlert("已通过注册申请，请为学员开卡");
                   }}
-                  onRejectRegistration={(reg) => {
+                  onRejectRegistration={async (reg) => {
+                    await supabase
+                      .from("registration_requests")
+                      .update({ status: "rejected" })
+                      .eq("id", reg.id);
                     setPendingRegistrations((prev) => prev.filter((p) => p.id !== reg.id));
                     showAlert("已拒绝该申请");
                   }}
@@ -811,16 +1191,25 @@ const App = () => {
       {showRegisterModal && (
         <StudentRegisterModal
           onClose={() => setShowRegisterModal(false)}
-          onSubmit={(form) => {
+          onSubmit={async (form) => {
             const exists = students.some((s) => s.phone === form.phone);
             const pending = pendingRegistrations.some((p) => p.phone === form.phone);
             if (exists || pending) {
               showAlert("手机号已存在，请联系老师开卡");
               return;
             }
+            const insertRes = await supabase
+              .from("registration_requests")
+              .insert(mapRegistrationToDb(form))
+              .select("*")
+              .single();
+            if (insertRes.error) {
+              handleDbError(insertRes.error, "提交失败");
+              return;
+            }
             setPendingRegistrations((prev) => [
               ...prev,
-              { ...form, id: buildId("r") },
+              mapRegistrationFromDb(insertRes.data),
             ]);
             setShowRegisterModal(false);
             showAlert("申请已提交，请联系老师开卡");
@@ -868,7 +1257,7 @@ const App = () => {
     </div>
   );
 };
-const LoginPanel = ({ onLogin, onRegister }) => {
+const LoginPanel = ({ onLogin, onRegister, studioName }) => {
   const [role, setRole] = useState("student");
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
@@ -896,7 +1285,7 @@ const LoginPanel = ({ onLogin, onRegister }) => {
               />
             </svg>
           </div>
-          <div style={styles.loginBrand}>小主瑜伽</div>
+          <div style={styles.loginBrand}>{studioName}</div>
           <div style={styles.loginSub}>呼吸 · 伸展 · 觉察</div>
         </div>
         <div style={styles.loginRole}>
@@ -2064,6 +2453,7 @@ const styles = {
   brand: { fontSize: "20px", fontWeight: 800, color: "#3a4766", letterSpacing: "0.5px" },
   topBarRight: { display: "flex", gap: "12px", alignItems: "center" },
   topHint: { color: "#7b85a1", fontSize: "14px" },
+  loading: { padding: "10px 16px", color: "#7b85a1", fontSize: "13px" },
   userBadge: { padding: "6px 10px", background: "rgba(255,255,255,0.8)", borderRadius: "12px", color: "#4a5674", fontWeight: 700 },
   body: { display: "flex", minHeight: "80vh" },
   sideNav: { width: "200px", padding: "20px", background: "#f9faff", borderRight: "1px solid #e8edf7", display: "flex", flexDirection: "column", gap: "10px" },
