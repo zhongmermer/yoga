@@ -534,11 +534,33 @@ const App = () => {
     setAlert(msg);
     setTimeout(() => setAlert(""), 2400);
   };
+  const getFriendlyError = (error, fallback) => {
+    if (!error) return fallback;
+    const code = error?.code || error?.status || "";
+    const msg = `${error?.message || error?.error || error || ""}`.toLowerCase();
+    if (
+      code === "23505" ||
+      msg.includes("duplicate key") ||
+      msg.includes("already exists") ||
+      msg.includes("unique")
+    ) {
+      return "该手机号已开卡或已提交申请，请联系老师开卡";
+    }
+    if (msg.includes("phone exists")) {
+      return "该手机号已开卡，请联系老师";
+    }
+    if (msg.includes("invalid jwt") || msg.includes("unauthorized")) {
+      return "登录已过期，请退出后重新登录";
+    }
+    if (msg.includes("forbidden")) {
+      return "权限不足，请联系管理员";
+    }
+    return fallback;
+  };
   const handleDbError = (error, msg) => {
     if (error) {
       console.error(error);
-      const detail = error?.message ? `：${error.message}` : "";
-      showAlert(`${msg}${detail}`);
+      showAlert(getFriendlyError(error, msg));
     }
   };
   useEffect(() => {
@@ -1244,7 +1266,7 @@ const App = () => {
                       requestId: reg.id,
                     });
                     if (error || data?.error) {
-                      showAlert(error || data?.error || "开通学员失败");
+                      showAlert(getFriendlyError(error || data?.error, "开通学员失败"));
                       return;
                     }
                     if (data?.student) {
@@ -1295,7 +1317,7 @@ const App = () => {
             const exists = students.some((s) => s.phone === form.phone);
             const pending = pendingRegistrations.some((p) => p.phone === form.phone);
             if (exists || pending) {
-              showAlert("手机号已存在，请联系老师开卡");
+              showAlert("该手机号已开卡或已提交申请，请联系老师开卡");
               return;
             }
             const insertRes = await supabase
@@ -1304,7 +1326,7 @@ const App = () => {
               .select("*")
               .single();
             if (insertRes.error) {
-              handleDbError(insertRes.error, "提交失败");
+              handleDbError(insertRes.error, "申请提交失败");
               return;
             }
             setPendingRegistrations((prev) => [
@@ -1341,8 +1363,7 @@ const App = () => {
               password: form.password,
             });
             if (error || data?.error) {
-              const detail = data?.error || error || "";
-              showAlert(detail ? `创建学员失败：${detail}` : "创建学员失败");
+              showAlert(getFriendlyError(error || data?.error, "创建学员失败"));
               return "";
             }
             if (data?.student) {
