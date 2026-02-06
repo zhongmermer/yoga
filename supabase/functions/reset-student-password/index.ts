@@ -6,8 +6,8 @@ serve(async (req) => {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const supabaseUrl = Deno.env.get("PROJECT_URL") || "";
+  const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") || "";
   if (!supabaseUrl || !serviceRoleKey) {
     return new Response(JSON.stringify({ error: "Missing env config" }), {
       status: 500,
