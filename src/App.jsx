@@ -263,6 +263,13 @@ const formatDate = (d) => {
   return `${year}-${month}-${day}`;
 };
 const formatTime = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const roundTimeToStep = (d, stepMinutes = 10) => {
+  const next = new Date(d);
+  const minutes = next.getMinutes();
+  const rounded = Math.floor(minutes / stepMinutes) * stepMinutes;
+  next.setMinutes(rounded, 0, 0);
+  return next;
+};
 const parseDate = (dateStr) => {
   const [y, m, d] = dateStr.split("-").map((v) => parseInt(v, 10));
   return new Date(y, m - 1, d, 0, 0, 0, 0);
@@ -311,7 +318,7 @@ const computePeriodCardEnd = (card, holidays) => {
   return addDays(card.endDate, totalDays);
 };
 const getNowDateStr = () => formatDate(new Date());
-const getNowTimeStr = () => formatTime(new Date());
+const getNowTimeStr = () => formatTime(roundTimeToStep(new Date(), 10));
 const buildId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 
 const buildCardName = ({ type, startDate, endDate, totalCount, allowedLevels }) => {
@@ -2219,6 +2226,7 @@ const CourseModal = ({ teachers, students, cards, onClose, onSubmit, course }) =
         <input
           style={styles.input}
           type="time"
+          step={600}
           value={form.time}
           onChange={(e) => handleChange("time", e.target.value)}
         />
