@@ -1427,7 +1427,7 @@ const LoginPanel = ({ onLogin, onRegister, studioName }) => {
             </svg>
           </div>
           <div style={styles.loginBrand}>{studioName}</div>
-          <div style={styles.loginSub}>呼吸 · 伸展 · 觉察</div>
+          <div style={styles.loginSub}>一呼一吸，一期一会</div>
         </div>
         <div style={styles.loginRole}>
           <button
