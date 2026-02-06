@@ -104,24 +104,28 @@ const mapTeacherFromDb = (t) => ({
   name: t.name,
   password: t.password,
   isAdmin: t.is_admin,
+  userId: t.user_id || "",
 });
 const mapTeacherToDb = (t) => ({
   id: t.id,
   name: t.name,
   password: t.password,
   is_admin: t.isAdmin,
+  user_id: t.userId || null,
 });
 const mapStudentFromDb = (s) => ({
   id: s.id,
   name: s.name,
   phone: s.phone,
   password: s.password,
+  userId: s.user_id || "",
 });
 const mapStudentToDb = (s) => ({
   id: s.id,
   name: s.name,
   phone: s.phone,
   password: s.password,
+  user_id: s.userId || null,
 });
 const mapCardFromDb = (c) => ({
   id: c.id,
@@ -503,7 +507,33 @@ const App = () => {
   };
   useEffect(() => {
     let cancelled = false;
-    const loadAll = async () => {
+    const loadSettings = async () => {
+      const settingsRes = await supabase.from("settings").select("*").limit(1);
+      if (cancelled) return;
+      if (!settingsRes.error) {
+        const settingsRow = settingsRes.data?.[0];
+        if (settingsRow?.studio_name) setStudioName(settingsRow.studio_name);
+      }
+    };
+    loadSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const loadAuthedData = async () => {
+      if (!auth) {
+        setTeachers([]);
+        setStudents([]);
+        setCourses([]);
+        setCards([]);
+        setHolidays([]);
+        setBookings([]);
+        setPendingRegistrations([]);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       const [
         teacherRes,
@@ -513,7 +543,6 @@ const App = () => {
         holidayRes,
         bookingRes,
         regRes,
-        settingsRes,
       ] = await Promise.all([
         supabase.from("teachers").select("*"),
         supabase.from("students").select("*"),
@@ -522,7 +551,6 @@ const App = () => {
         supabase.from("holidays").select("*"),
         supabase.from("bookings").select("*"),
         supabase.from("registration_requests").select("*").eq("status", "pending"),
-        supabase.from("settings").select("*").limit(1),
       ]);
       if (cancelled) return;
       handleDbError(teacherRes.error, "加载老师失败");
@@ -532,36 +560,55 @@ const App = () => {
       handleDbError(holidayRes.error, "加载放假设置失败");
       handleDbError(bookingRes.error, "加载预约失败");
       handleDbError(regRes.error, "加载注册申请失败");
-      handleDbError(settingsRes.error, "加载馆名失败");
-
-      let teacherData = (teacherRes.data || []).map(mapTeacherFromDb);
-      if (teacherData.length === 0) {
-        const seedTeacher = { name: "小主", password: "yoga123", isAdmin: true };
-        const insertRes = await supabase
-          .from("teachers")
-          .insert(mapTeacherToDb(seedTeacher))
-          .select("*")
-          .single();
-        if (insertRes.error) {
-          handleDbError(insertRes.error, "初始化管理员失败");
-        } else {
-          teacherData = [mapTeacherFromDb(insertRes.data)];
-        }
-      }
-      setTeachers(teacherData);
+      setTeachers((teacherRes.data || []).map(mapTeacherFromDb));
       setStudents((studentRes.data || []).map(mapStudentFromDb));
       setCourses((courseRes.data || []).map(mapCourseFromDb));
       setCards((cardRes.data || []).map(mapCardFromDb));
       setHolidays((holidayRes.data || []).map(mapHolidayFromDb));
       setBookings((bookingRes.data || []).map(mapBookingFromDb));
       setPendingRegistrations((regRes.data || []).map(mapRegistrationFromDb));
-      const settingsRow = settingsRes.data?.[0];
-      if (settingsRow?.studio_name) setStudioName(settingsRow.studio_name);
       setLoading(false);
     };
-    loadAll();
+    loadAuthedData();
     return () => {
       cancelled = true;
+    };
+  }, [auth]);
+  useEffect(() => {
+    let mounted = true;
+    const syncAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data?.session;
+      if (!session?.user) {
+        if (mounted) setAuth(null);
+        return;
+      }
+      const userId = session.user.id;
+      const { data: teacherRow } = await supabase
+        .from("teachers")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (teacherRow && mounted) {
+        setAuth({ type: "teacher", id: teacherRow.id });
+        return;
+      }
+      const { data: studentRow } = await supabase
+        .from("students")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (studentRow && mounted) {
+        setAuth({ type: "student", id: studentRow.id });
+      }
+    };
+    syncAuth();
+    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+      syncAuth();
+    });
+    return () => {
+      mounted = false;
+      listener?.subscription?.unsubscribe();
     };
   }, []);
   useEffect(() => {
@@ -578,42 +625,66 @@ const App = () => {
       setSelectedDate(weekDays[0]);
     }
   }, [weekDays, selectedDate]);
-  const handleLogin = ({ role, account, password }) => {
+  const handleLogin = async ({ role, account, password }) => {
+    const email = account.includes("@") ? account : `${account}@studio.local`;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error || !data?.user) {
+      showAlert("账号或密码错误");
+      return;
+    }
+    const userId = data.user.id;
     if (role === "teacher") {
-      const teacher = teachers.find((t) => t.name === account && t.password === password);
-      if (!teacher) return showAlert("账号或密码错误");
-      setAuth({ type: "teacher", id: teacher.id });
+      const { data: teacherRow, error: tError } = await supabase
+        .from("teachers")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      if (tError || !teacherRow) {
+        showAlert("老师账号未绑定");
+        await supabase.auth.signOut();
+        return;
+      }
+      setAuth({ type: "teacher", id: teacherRow.id });
       setActiveTab("schedule");
       return;
     }
-    const student = students.find((s) => s.phone === account && s.password === password);
-    if (!student) return showAlert("账号或密码错误");
-    setAuth({ type: "student", id: student.id });
+    const { data: studentRow, error: sError } = await supabase
+      .from("students")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
+    if (sError || !studentRow) {
+      showAlert("学员账号未绑定");
+      await supabase.auth.signOut();
+      return;
+    }
+    setAuth({ type: "student", id: studentRow.id });
     setActiveTab("schedule");
   };
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setAuth(null);
   };
   const handleChangePassword = async ({ oldPassword, newPassword }) => {
     if (auth?.type !== "student") return;
-    const target = students.find((s) => s.id === auth.id);
-    if (!target || target.password !== oldPassword) {
+    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword(
+      {
+        email: `${currentStudent?.phone}@studio.local`,
+        password: oldPassword,
+      }
+    );
+    if (signInErr || !signInData?.user) {
       showAlert("原密码不正确");
       return;
     }
-    const { data, error } = await supabase
-      .from("students")
-      .update({ password: newPassword })
-      .eq("id", auth.id)
-      .select("*")
-      .single();
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) {
       handleDbError(error, "密码更新失败");
       return;
     }
-    setStudents((prev) =>
-      prev.map((s) => (s.id === auth.id ? mapStudentFromDb(data) : s))
-    );
     setShowPasswordModal(false);
     showAlert("密码已更新");
   };
@@ -971,19 +1042,13 @@ const App = () => {
     );
   };
   const handleResetStudentPassword = async (studentId) => {
-    const { data, error } = await supabase
-      .from("students")
-      .update({ password: "123456" })
-      .eq("id", studentId)
-      .select("*")
-      .single();
-    if (error) {
-      handleDbError(error, "重置失败");
+    const { data, error } = await supabase.functions.invoke("reset-student-password", {
+      body: { studentId, newPassword: "123456" },
+    });
+    if (error || data?.error) {
+      handleDbError(error || data?.error, "重置失败");
       return;
     }
-    setStudents((prev) =>
-      prev.map((s) => (s.id === studentId ? mapStudentFromDb(data) : s))
-    );
     showAlert("学员密码已重置为123456");
   };
   const isAdmin = currentTeacher?.isAdmin;
@@ -1136,20 +1201,19 @@ const App = () => {
                   onResetPassword={handleResetStudentPassword}
                   pendingRegistrations={pendingRegistrations}
                   onApproveRegistration={async (reg) => {
-                    const { data: studentData, error: studentErr } = await supabase
-                      .from("students")
-                      .insert(mapStudentToDb(reg))
-                      .select("*")
-                      .single();
-                    if (studentErr) {
-                      handleDbError(studentErr, "开通学员失败");
+                    const { data, error } = await supabase.functions.invoke(
+                      "create-student",
+                      {
+                        body: { name: reg.name, phone: reg.phone, password: reg.password, requestId: reg.id },
+                      }
+                    );
+                    if (error || data?.error) {
+                      handleDbError(error || data?.error, "开通学员失败");
                       return;
                     }
-                    await supabase
-                      .from("registration_requests")
-                      .update({ status: "approved" })
-                      .eq("id", reg.id);
-                    setStudents((prev) => [...prev, mapStudentFromDb(studentData)]);
+                    if (data?.student) {
+                      setStudents((prev) => [...prev, mapStudentFromDb(data.student)]);
+                    }
                     setPendingRegistrations((prev) => prev.filter((p) => p.id !== reg.id));
                     showAlert("已通过注册申请，请为学员开卡");
                   }}
@@ -1310,13 +1374,13 @@ const LoginPanel = ({ onLogin, onRegister, studioName }) => {
         </div>
         <div style={styles.loginFields}>
           <div style={styles.loginField}>
-            <div style={styles.loginLabel}>{role === "student" ? "手机号" : "姓名"}</div>
-            <input
-              style={styles.input}
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder={role === "student" ? "请输入手机号" : "请输入老师姓名"}
-            />
+          <div style={styles.loginLabel}>{role === "student" ? "手机号" : "账号"}</div>
+          <input
+            style={styles.input}
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+            placeholder={role === "student" ? "请输入手机号" : "请输入老师账号"}
+          />
           </div>
           <div style={styles.loginField}>
             <div style={styles.loginLabel}>密码</div>
