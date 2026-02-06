@@ -5,14 +5,25 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://xmthimontmtcradzcyhf.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_DkLIsNxaJf7ac-R-lYlB9g_swwr69MW";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const invokeEdge = async (name, payload) => {
+const getAccessToken = async () => {
   const { data } = await supabase.auth.getSession();
-  const token = data?.session?.access_token || "";
+  let token = data?.session?.access_token || "";
+  if (!token) {
+    const refresh = await supabase.auth.refreshSession();
+    token = refresh.data?.session?.access_token || "";
+  }
+  return token;
+};
+const invokeEdge = async (name, payload) => {
+  const token = await getAccessToken();
+  if (!token) {
+    return { error: "登录已过期，请退出重新登录" };
+  }
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: token ? `Bearer ${token}` : "",
+      Authorization: `Bearer ${token}`,
       apikey: SUPABASE_ANON_KEY,
     },
     body: JSON.stringify(payload || {}),
